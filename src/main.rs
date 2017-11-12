@@ -1,42 +1,39 @@
 extern crate let_lang_proj;
 
-use let_lang_proj::let_lang_scanner::*;
+use let_lang_proj::proc_lang_scanner::*;
 use let_lang_proj::let_lang_parser::*;
-use let_lang_proj::let_lang_exp::*;
-use let_lang_proj::let_lang_env::*;
-use let_lang_proj::int_bool::*;
+use let_lang_proj::proc_lang_exp::*;
+use let_lang_proj::proc_lang_env::*;
+use let_lang_proj::int_bool_proc::*;
+use std::rc::Rc;
 
-fn value_of(ast: &LetLangExp, env: &LetLangEnv) -> Option<IntBool> { // defined in int_bool.rs
+fn value_of(ast: &ProcLangExp, env: &ProcEnvExp) -> Option<IntBoolProc> { // defined in int_bool_proc.rs
     match ast.clone() {
-        LetLangExp::ConstExp(int)    => Some(IntBool::Integer(int)),
-        LetLangExp::Boolean(b)       => Some(IntBool::Boolean(b)),
-        LetLangExp::DiffExp(e1, e2)  => value_of_diff_exp(&(*e1), &(*e2), env),
-        LetLangExp::IsZeroExp(e)     => value_of_iszero(&(*e), env),
-        LetLangExp::IfExp(e1,e2,e3)  => value_of_if(&(*e1),&(*e2),&(*e3), env),
-        LetLangExp::VarExp(s)        => env.apply_env(&s),
-        LetLangExp::LetExp(s,e1,e2)  => value_of_let(&s, &(*e1), &(*e2), env),
-        LetLangExp::CallExp(rator, rand)    => value_of_call_exp(&(*rator), &(*rand)),
-        LetLangExp::ProcExp(var, body, env) =>
+        ProcLangExp::ConstExp(int)    => Some(IntBoolProc::Integer(int)),
+        ProcLangExp::Boolean(b)       => Some(IntBoolProc::Boolean(b)),
+        ProcLangExp::DiffExp(e1, e2)  => value_of_diff_exp(&(*e1), &(*e2), env),
+        ProcLangExp::IsZeroExp(e)     => value_of_iszero(&(*e), env),
+        ProcLangExp::IfExp(e1, e2, e3)  => value_of_if(&(*e1), &(*e2), &(*e3), env),
+        ProcLangExp::VarExp(s)        => env.apply_env(&s),
+        ProcLangExp::LetExp(s, e1, e2)  => value_of_let(&s, &(*e1), &(*e2), env),
+
+        ProcLangExp::PlusExp(e1, e2) => value_of_plus_exp(&(*e1), &(*e2), env),
+        ProcLangExp::ProcExp(s, body) => value_of_proc_exp(&s, &(*body), env),
+        ProcLangExp::CallExp(e1, e2) => value_of_call_exp(&(*e1), &(*e2), env),
+
     }}
-
-fn value_of_proc(s: &String, e: &LetLangExp, env:&LetLangEnv){
-    let new_env= env.extend_env(s, new_val.unwrap());
-
-
-}
-
-fn value_of_let(s: &String, e1: &LetLangExp, e2: &LetLangExp, env: &LetLangEnv) -> Option<IntBool>{
+fn value_of_let(s: &String, e1: &ProcLangExp, e2: &ProcLangExp, env: &ProcEnvExp) -> Option<IntBoolProc>{
     let new_val = value_of(e1, env);
     if new_val.is_none() { return None};
     let new_env = env.extend_env(s, new_val.unwrap());
     value_of(e2, &new_env)
 }
-
-fn value_of_if(e1: &LetLangExp, e2: &LetLangExp, e3: &LetLangExp, env: &LetLangEnv) -> Option<IntBool> {
+fn value_of_if(e1: &ProcLangExp, e2: &ProcLangExp, e3: &ProcLangExp, env: &ProcEnvExp) -> Option<IntBoolProc> {
     if match value_of(e1, env) { // compute value of test and treat as true only if boolean true
         Some(x) => match x {
-            IntBool::Integer(_i) => false,
-            IntBool::Boolean(b) => b,
+            IntBoolProc::Integer(_i) => false,
+            IntBoolProc::Procedure(_s, _e1, _e2) => false,
+            IntBoolProc::Boolean(b) => b,
             },
         None => false,
         }
@@ -45,19 +42,18 @@ fn value_of_if(e1: &LetLangExp, e2: &LetLangExp, e3: &LetLangExp, env: &LetLangE
         } else {
             value_of(e3, env)
         }}
-
-fn value_of_iszero(e: &LetLangExp, env: &LetLangEnv) -> Option<IntBool> {
+fn value_of_iszero(e: &ProcLangExp, env: &ProcEnvExp) -> Option<IntBoolProc> {
     let opt_val = value_of(e, env);
     match opt_val {
         Some(x) => match x {
-            IntBool::Integer(i)  => Some(IntBool::Boolean(i == 0)),
-            IntBool::Boolean(_b) => None,
+            IntBoolProc::Integer(i)  => Some(IntBoolProc::Boolean(i == 0)),
+            IntBoolProc::Boolean(_b) => None,
+            IntBoolProc::Procedure(_s, _e1, _e2) => None,
         },
         None    => None,
     }}
-
 // checked difference
-fn value_of_diff_exp(arg1: &LetLangExp, arg2: &LetLangExp, env: &LetLangEnv) -> Option<IntBool> {
+fn value_of_diff_exp(arg1: &ProcLangExp, arg2: &ProcLangExp, env: &ProcEnvExp) -> Option<IntBoolProc> {
     let val1 = value_of(arg1, env);
     let val2 = value_of(arg2, env);
     if val1.is_none() || val2.is_none() {
@@ -65,130 +61,95 @@ fn value_of_diff_exp(arg1: &LetLangExp, arg2: &LetLangExp, env: &LetLangEnv) -> 
     } else {
         let v1 = val1.unwrap();
         let v2 = val2.unwrap();
-        Some(IntBool::Integer(value_of_diff_exp_work(&v1, &v2)))
+        Some(IntBoolProc::Integer(value_of_diff_exp_work(&v1, &v2)))
     }}
-
-fn value_of_diff_exp_work(a1: &IntBool, a2: &IntBool) -> i32 {
+fn value_of_diff_exp_work(a1: &IntBoolProc, a2: &IntBoolProc) -> i32 {
     let a1_int_val: i32 = match *a1 {
-                            IntBool::Integer(i) => i,
+                            IntBoolProc::Integer(i) => i,
                             _                   => 0,
                             };
     let a2_int_val: i32 = match *a2 {
-                            IntBool::Integer(i) => i,
+                            IntBoolProc::Integer(i) => i,
                             _                   => 0,
                             };
     a1_int_val - a2_int_val
 }
 
+// added for proc and letrec
+fn show_parse(s: &String) -> Result <ProcLangExp, ParseErr> {
+    println!("Parsing: {}", s);
+    let tok_result= tokenize(s);
+    match tok_result{
+        Ok(v) => {
+            let ast = try! (parse(&v));
+            println!("AST: \n{:#?}\n", ast);
+            println!("Stringified AST: {}\n", ast);
+            Ok(ast)},
+        Err(_e) => Err(ParseErr { message: "Token parse error.".to_string()})
+    }
+
+}
+fn value_of_plus_exp(arg1: &ProcLangExp, arg2: &ProcLangExp, env: &ProcEnvExp) -> Option<IntBoolProc> {
+    let val1 = value_of(arg1, env);
+    let val2 = value_of(arg2, env);
+    if val1.is_none() || val2.is_none() {
+        None
+    } else {
+        let v1 = val1.unwrap();
+        let v2 = val2.unwrap();
+        Some(IntBoolProc::Integer(value_of_plus_exp_work(&v1, &v2)))
+    }}
+fn value_of_plus_exp_work(a1: &IntBoolProc, a2: &IntBoolProc) -> i32 {
+    let a1_int_val: i32 = match *a1 {
+        IntBoolProc::Integer(i) => i,
+        _                   => 0,
+    };
+    let a2_int_val: i32 = match *a2 {
+        IntBoolProc::Integer(i) => i,
+        _                   => 0,
+    };
+    a1_int_val + a2_int_val
+}
+fn value_of_proc_exp(v: &String, body: &ProcLangExp, env: &ProcEnvExp) -> Option<IntBoolProc> {
+    Some(IntBoolProc::Procedure(v.clone(), Rc::new(body.clone()), Rc::new(env.clone())))
+}
+fn value_of_call_exp(rator: &ProcLangExp, rand: &ProcLangExp, env: &ProcEnvExp) -> Option<IntBoolProc> {
+    let opt_closure=
+        match rator.clone() {
+            ProcLangExp::VarExp(s) => env.apply_env(&s),
+            ProcLangExp::ProcExp(v, e) => Some(IntBoolProc::Procedure(v.clone(), Rc::new(((*e). clone())), Rc::new(env.clone()))),
+            _ => None,
+        };
+    let opt_evald_rand = value_of(rand ,env);
+    if opt_closure.is_none() || opt_evald_rand.is_none() {
+        None
+    } else {
+        apply_procedure(&(opt_closure.unwrap()), &(opt_evald_rand.unwrap()))
+    }
+}
+fn apply_procedure(closure: &IntBoolProc, rand: &IntBoolProc) -> Option<IntBoolProc>{
+    match closure.clone() {
+        IntBoolProc::Procedure(v, b, env) =>
+            value_of(&(*b).clone(), &(env.clone()).extend_env(&(v.to_string()), rand.clone())),
+                                        _ => None,
+    }
+}
+
 #[allow(dead_code)]
 fn main() {
-    let str1 = "-(24, +31)";
-    let result: Result<Vec<Token>, LexErr> = tokenize(str1);
-
-    match result {
-        Ok(v)  => println!("{:?}", v),
-        Err(e) => println!("Syntax error: {:#?}", e),
-    }
-
-    let str2 = "if true then 1 else -1";
-    let result = tokenize(str2);  // leave out type declaration
-    match result {
-        Ok(v)  => println!("{:?}", v),
-        Err(e) => println!("Syntax error: {:#?}", e),
-    }
-
-    let str3 = "let temp = 3 in -(temp, 103)";
-    match tokenize(str3) {
-        Ok(v)  => println!("{:?}", v),
-        Err(e) => println!("Syntax error: {:#?}", e),
-    }
-
-    let str4 = "if iszero(TextId) then let x = -571 in false";
-    match tokenize(str4) {
-        Ok(v)  => println!("{:?}", v),
-        Err(e) => println!("Syntax error: {:#?}", e),
-    }
-
-    let e1 = LetLangExp::new_const_exp(64);
-    println!("\ne1: {}                                   (ConstExp)", e1);
-
-    let e2 = LetLangExp::new_diff_exp(&e1, &e1);
-    println!("e2: {}                            (DiffExp)", e2);
-
-    let e3 = LetLangExp::new_iszero(&e1);
-    println!("e3: {}                           (IsZeroExp)", e3);
-
-    let e4 = LetLangExp::new_if_exp(&e3, &e1, &e2);
-    println!("e4: {} (IfExp)", e4);
-
-    let e5 = LetLangExp::new_var_exp(&("myVar".to_string()));
-    println!("e5: {}                                (VarExp)", e5);
-
-    let e6 = LetLangExp::new_let_exp(&("x".to_string()), &e1, &e5);
-    println!("e6: {}                  (LetExp)", e6);
-
-    println!("\nStarting to parse: str1.");
-    let t1 = tokenize(str1).unwrap();
-    let ast1_result = parse(&t1);
-    match ast1_result {
-        Ok(v)  => println!("{}", v),
-//        Ok(v)  => println!("{:?}", v),
-        Err(e) => println!("Syntax error: {:#?}", e),
-    }
-
     println!("\nStarting to parse: milestone let");
-    let mile_str =
-    "let x = 7
-     in let y = 2
-        in let y = let x = -(x, 1)
-                   in -(x, y)
-           in -(-(x, 8), y)";
-
+    let mile_str = "let x = 200 in let f = proc (z) -(z, x) in let x = 100 in let g = proc (z) -(z, x) in -((f 1), (g 1))";
     // compute tokens
     let tok_result = tokenize(mile_str);        // returns Result<Vec<Token>, LexErr>
     let mile_tokens = tok_result.unwrap();
 
     // compute AST and evaluate
-    let env = LetLangEnv::EmptyEnv;
+    let env = ProcEnvExp::EmptyEnv;
     let mile_ast_result = parse(&mile_tokens);  // returns Result<LetLangExp, ParseErr>
     match mile_ast_result {
         Ok(v)  => {println!("{}", v);      // regular print
-                   println!("{:#?}", v);   // pretty-print in debug format
-                   println!("\nmilestone = {:?}", value_of(&v, &env));},
+            println!("{:#?}", v);   // pretty-print in debug format
+            println!("\nmilestone = {:?}", value_of(&v, &env));},
         Err(e) => println!("Syntax error: {:#?}", e),
     }
-
-    println!("\nStarting to parse IFFFFFFFFFFFFFF");
-    let if_str =
-    "if iszero(-(x, 11))
-    then -(y, 2)
-    else -(y, 4)";
-
-    // Create an environment were variables x and y are defined
-    let env1 = env.extend_env(&("y".to_string()), IntBool::Integer(22));
-    let env2 = env1.extend_env(&("x".to_string()), IntBool::Integer(33));
-
-    // compute and print tokens
-    let if_tok_result = tokenize(if_str);
-    let if_tokens = if_tok_result.unwrap();
-    println!("If tokens: {:?}", if_tokens);  // print in debug format
-
-    let if_ast_result = parse(&if_tokens);
-    match if_ast_result {
-        Ok(v)  => {println!("{}", v);
-                   println!("{:#?}", v);
-                   println!("\nif_value = {:?}", value_of(&v, &env2));},
-        Err(e) => println!("Syntax error: {:#?}", e),
-    }
-
-/*    println!("\nNow testing: ungrammatical input!");
-    let ungram_str =
-    "let x = 21 in minus)";
-    let if_tok_result = tokenize(ungram_str);
-    let if_tokens = if_tok_result.unwrap();
-    let if_ast_result = parse(&if_tokens);
-    match if_ast_result {
-        Ok(v)  => println!("{}", v),
-        Err(e) => println!("Syntax error: {:#?}", e),
-    } */
 }

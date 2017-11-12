@@ -1,18 +1,18 @@
 // Adapted from file parser.rs at:
 // https://github.com/kenpratt/rusty_scheme
 
-use let_lang_scanner::*;
-use let_lang_exp::*;      // needed for building ASTs
+use proc_lang_scanner::*;
+use proc_lang_exp::*;      // needed for building ASTs
 
 use std::fmt;
 use std::slice;
 
-pub fn parse(tokens: &Vec<Token>) -> Result<LetLangExp, ParseErr> {
+pub fn parse(tokens: &Vec<Token>) -> Result<ProcLangExp, ParseErr> {
     Parser::parse(tokens)
 }
 
 pub struct ParseErr {
-    message: String,
+    pub message: String,
 }
 
 impl fmt::Display for ParseErr {
@@ -27,7 +27,7 @@ impl fmt::Debug for ParseErr {
 macro_rules! parse_err {
     ($($arg:tt)*) => (
         return Err(ParseErr { message: format!($($arg)*)})
-    )
+)
 }
 
 // Parser datatype is struct with one field.
@@ -41,7 +41,7 @@ impl<'a> Parser<'a> {
     // Takes a reference to a token vector as input.
     // Builds Parser and then calls parse_let_lang_exp().
     // "parser" must be mutable b/c the tokens field is updated.
-    fn parse(tokens: &Vec<Token>) -> Result<LetLangExp, ParseErr> {
+    fn parse(tokens: &Vec<Token>) -> Result<ProcLangExp, ParseErr> {
         let mut parser = Parser { tokens: tokens.iter() };
         let ast_root = parser.parse_let_lang_exp();
         let option_next_tok = parser.tokens.next();
@@ -50,18 +50,27 @@ impl<'a> Parser<'a> {
             _          => ast_root,
         }
     }
-    fn parse_let_lang_exp(&mut self) -> Result<LetLangExp, ParseErr> {
+    fn parse_let_lang_exp(&mut self) -> Result<ProcLangExp, ParseErr> {
         let option_peek: Option<&Token> = self.tokens.clone().next();
         match option_peek {
                 Some(peek_token) => self.parse_lle_work(peek_token.clone()),
                 None             => parse_err!("Unexpected end of input")
             }
     }
-    fn parse_lle_work(&mut self, peek_tok: Token) -> Result<LetLangExp, ParseErr> {
+    fn parse_lle_work(&mut self, peek_tok: Token) -> Result<ProcLangExp, ParseErr> {
 //        println!("Peek token: {:?}", peek_tok);  // for debugging
         match peek_tok {  // try returns Err(ParseErr) on early return
+
+            Token::Lparen         => {
+                                      let e: ProcLangExp = self.parse_call()?;
+                                      Ok(e)},
+
+            Token::Proc           => {
+                                      let e: ProcLangExp = self.parse_proc()?;
+                                      Ok(e)},
+
             Token::Integer(_n)    => {
-                                      let e: LetLangExp = self.parse_const()?;
+                                      let e: ProcLangExp = self.parse_const()?;
                                       Ok(e)},
             Token::Boolean(_b)    => {
                                       let e = self.parse_bool()?;
@@ -90,7 +99,7 @@ impl<'a> Parser<'a> {
             }
     }
     // build AST fragment for const
-    fn parse_const(&mut self) -> Result<LetLangExp, ParseErr> {
+    fn parse_const(&mut self) -> Result<ProcLangExp, ParseErr> {
         let val: i32;
         let option_tok: Option<&Token> = self.tokens.next();
         // Extract the token from Some() if found, else return with Err(ParseErr)
@@ -103,10 +112,10 @@ impl<'a> Parser<'a> {
             Token::Integer(i) => val = i,
             _                 => parse_err!("parse_const: Int token expected."),
         };
-        Ok(LetLangExp::new_const_exp(val))  // Final returned value
+        Ok(ProcLangExp::new_const_exp(val))  // Final returned value
     }
    // build AST fragment for boolean
-   fn parse_bool(&mut self) -> Result<LetLangExp, ParseErr> {
+    fn parse_bool(&mut self) -> Result<ProcLangExp, ParseErr> {
         let val: bool;
         let option_tok: Option<&Token> = self.tokens.next();
         // Extract the token from Some() if found, else return with Err(ParseErr)
@@ -119,10 +128,10 @@ impl<'a> Parser<'a> {
             Token::Boolean(b) => val = b,
             _                 => parse_err!("parse_bool: Identifier token expected."),
         };
-        Ok(LetLangExp::new_boolean(val))
+        Ok(ProcLangExp::new_boolean(val))
     }
     // build AST fragment for variable
-    fn parse_var(&mut self) -> Result<LetLangExp, ParseErr> {
+    fn parse_var(&mut self) -> Result<ProcLangExp, ParseErr> {
         let var: String;
         let option_tok: Option<&Token> = self.tokens.next();
         // Extract the token from Some() if found, else return with Err(ParseErr)
@@ -135,7 +144,7 @@ impl<'a> Parser<'a> {
             Token::Identifier(s) => var = s,
             _                    => parse_err!("parse_var: Identifier token expected."),
         };
-        Ok(LetLangExp::new_var_exp(&var))
+        Ok(ProcLangExp::new_var_exp(&var))
     }
 
     // Gets the variable name.
@@ -161,7 +170,7 @@ impl<'a> Parser<'a> {
     // Matches to the next token if it is a specific type.
     // If successful, the input stream is advanced but the result is not used.
     // Used in parse_diff, parse_iszero, parse_if_then_else, parse_let_in.
-    fn match_token(&mut self, tok: &Token)  -> Result<Option<LetLangExp>, ParseErr> {
+    fn match_token(&mut self, tok: &Token)  -> Result<Option<ProcLangExp>, ParseErr> {
         let option_tok: Option<&Token> = self.tokens.next();
         match option_tok {
              Some(tok2) => {if tok == tok2 { // checks if the token type matches
@@ -172,38 +181,58 @@ impl<'a> Parser<'a> {
              _            => parse_err!("Expected {:?} but found EOI", tok)
          }}
     // build AST fragment for diff expression
-    fn parse_diff(&mut self) -> Result<LetLangExp, ParseErr> {
+    fn parse_diff(&mut self) -> Result<ProcLangExp, ParseErr> {
         try!(self.match_token(&Token::Minus));   // return with Err(ParseErr) if no match
         try!(self.match_token(&Token::Lparen));
         let e1 = try!(self.parse_let_lang_exp()); // return with Err(ParseErr) if no parse
         try!(self.match_token(&Token::Comma));
         let e2 = try!(self.parse_let_lang_exp());
         try!(self.match_token(&Token::Rparen));
-        Ok(LetLangExp::new_diff_exp(&e1, &e2))   // return Ok(LetLangExp::new_diff_exp())
+        Ok(ProcLangExp::new_diff_exp(&e1, &e2))   // return Ok(LetLangExp::new_diff_exp())
     }
-    fn parse_iszero(&mut self) -> Result<LetLangExp, ParseErr> {
+    fn parse_iszero(&mut self) -> Result<ProcLangExp, ParseErr> {
         self.match_token(&Token::IsZero)?;
         self.match_token(&Token::Lparen)?;
         let e = self.parse_let_lang_exp()?;
         self.match_token(&Token::Rparen)?;
-        Ok(LetLangExp::new_iszero(&e))
+        Ok(ProcLangExp::new_iszero(&e))
     }
-    fn parse_if_then_else(&mut self) -> Result<LetLangExp, ParseErr> {
+    fn parse_if_then_else(&mut self) -> Result<ProcLangExp, ParseErr> {
         self.match_token(&Token::If)?;
         let e1 = self.parse_let_lang_exp()?;
         self.match_token(&Token::Then)?;
         let e2 = self.parse_let_lang_exp()?;
         self.match_token(&Token::Else)?;
         let e3 = self.parse_let_lang_exp()?;
-        Ok(LetLangExp::new_if_exp(&e1, &e2, &e3))
+        Ok(ProcLangExp::new_if_exp(&e1, &e2, &e3))
     }
-    fn parse_let_in(&mut self) -> Result<LetLangExp, ParseErr> {
+    fn parse_let_in(&mut self) -> Result<ProcLangExp, ParseErr> {
         self.match_token(&Token::Let)?;
         let s = self.get_string()?;               // match variable name
         self.match_token(&Token::Assign)?;        // match "="
         let e1 = self.parse_let_lang_exp()?;
         self.match_token(&Token::In)?;
         let e2 = self.parse_let_lang_exp()?;
-        Ok(LetLangExp::new_let_exp(&s, &e1, &e2))
+        Ok(ProcLangExp::new_let_exp(&s, &e1, &e2))
     }
+    fn parse_proc(&mut self) -> Result<ProcLangExp, ParseErr> {
+        self.match_token(&Token::Proc)?;
+        self.match_token(&Token::Lparen)?;
+        let s = self.get_string()?; //bound variable
+        self.match_token(&Token::Rparen)?;
+        let e = self.parse_let_lang_exp()?;
+        Ok(ProcLangExp::new_proc_exp(&s, &e))
+    }
+    fn parse_call(&mut self) -> Result<ProcLangExp, ParseErr> {
+        self.match_token(&Token::Lparen)?;
+        let rator = self.parse_let_lang_exp()?; //procedure name
+        let rand = self.parse_let_lang_exp()?; //variable
+        self.match_token(&Token::Rparen)?;
+        Ok(ProcLangExp::new_call_exp(&rator, &rand))
+    }
+
+
+
+
+
 }

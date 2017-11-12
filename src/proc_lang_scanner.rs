@@ -22,6 +22,7 @@ pub enum Token {
     Comma,   // ,
     Minus,   // -
     Assign,  // =
+    Plus,
     IsZero,
     If,
     Then,
@@ -30,7 +31,8 @@ pub enum Token {
     In,
     Identifier(String),
     Integer(i32),
-    Boolean(bool)
+    Boolean(bool),
+    Proc
 }
 
 pub struct LexErr { // able to store line and column # of error
@@ -190,7 +192,10 @@ impl<'a> Lexer<'a> {
                 None => break
             }
         }
-        if &s[..] == "iszero" {
+        if &s[..] == "proc" {
+            Ok(Token::Proc)
+        }
+        else if &s[..] == "iszero" {
             Ok(Token::IsZero)
         } else
            if &s[..] == "minus" {
